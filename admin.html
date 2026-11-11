@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="robots" content="noindex">
+  <title>Admin</title>
+  <style>
+    body { font-family: system-ui, sans-serif; padding: 20px; max-width: 600px; margin: auto; }
+    input, textarea, select { width: 100%; margin: 6px 0; padding: 8px; box-sizing: border-box; }
+    button { padding: 10px 16px; background: #0f766e; color: #fff; border: 0; border-radius: 6px; cursor: pointer; }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <div id="login">
+    <h2>Admin login</h2>
+    <input id="pw" type="password" placeholder="Password">
+    <button onclick="login()">Log in</button>
+  </div>
+
+  <div id="panel" class="hidden">
+    <h2>Add or edit product</h2>
+    <input type="hidden" id="p-id">
+    <input id="p-name" placeholder="Product name">
+    <input id="p-category" placeholder="Category">
+    <textarea id="p-desc" placeholder="Description"></textarea>
+    <input id="p-price" type="number" placeholder="Price (₹)">
+    <input id="p-stock" type="number" placeholder="Stock quantity">
+    <input id="p-reg" placeholder="Regulatory / licence number">
+    <label><input type="checkbox" id="p-published" checked style="width:auto"> Published</label>
+    <input id="p-images" placeholder="Image URLs (comma separated)">
+    <input type="file" id="p-file" accept="image/*" multiple>
+    <button onclick="saveProduct()">Save product</button>
+    <p id="status"></p>
+  </div>
+
+  <script src="config.js"></script>
+  <script>
+    let token = null;
+
+    async function post(body) {
+      const res = await fetch(CONFIG.API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(body)
+      });
+      return res.json();
+    }
+
+    async function login() {
+      const r = await post({ action: 'login', password: document.getElementById('pw').value });
+      if (r.error) return alert(r.error);
+      token = r.token;
+      document.getElementById('login').classList.add('hidden');
+      document.getElementById('panel').classList.remove('hidden');
+    }
+
+    // Converts a file to base64, then uploads it to Drive through Apps Script
+    function toBase64(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result.split(',')[1]);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+    }
+
+    async function saveProduct() {
+      const status = document.getElementById('status');
+      status.textContent = 'Uploading...';
+
+      // Upload any new photos first
+      const urls = document.getElementById('p-images').value
+        .split(',').map(s => s.trim()).filter(Boolean);
+      for (const file of document.getElementById('p-file').files) {
+        const up = await post({
+          action: 'uploadImage', token,
+          base64: await toBase64(file),
+          mimeType: file.type, filename: file.name
+        });
+        if (up.error) return status.textContent = 'Upload failed: ' + up.error;
+        urls.push(up.url);
+      }
+
+      const product = {
+        id: document.getElementById('p-id').value,
+        name: document.getElementById('p-name').value,
+        category: document.getElementById('p-category').value,
+        description: document.getElementById('p-desc').value,
+        price: document.getElementById('p-price').value,
+        currency: 'INR',
+        stock: document.getElementById('p-stock').value,
+        regulatory_no: document.getElementById('p-reg').value,
+        published: document.getElementById('p-published').checked,
+        image_urls: urls.join(',')
+      };
+
+      const r = await post({ action: 'saveProduct', token, product });
+      status.textContent = r.error ? 'Error: ' + r.error : 'Saved. Product is live.';
+    }
+  </script>
+</body>
+</html>
